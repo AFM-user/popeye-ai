@@ -362,17 +362,18 @@ async function updateMemory(c, msgs) {
   const convo = msgs.map((m) => (m.role === 'user' ? (isAdv ? playerName(c) : 'User') + ': ' + clip(m.send || m.content, 700) : (isAdv ? clip(m.content, 900) : 'Assistant: ' + clip(m.content, 900)))).join('\n');
   let prompt;
   if (isAdv) prompt = 'Current story notes:\n' + (c.memory || '(none)') + '\n\nRecent events:\n' + convo + '\n\nRewrite the story notes so they include the important new events: where the party is, characters met, quests, promises, clues, items and enemies. Write at most 12 short bullet points, each starting with "- ". Output only the bullet points.';
-  else prompt = 'Current notes about this chat:\n' + (c.memory || '(none)') + '\n\nKnown facts about the user:\n' + (state.profile.about || '(none)') + '\n\nNew messages:\n' + convo + '\n\nUpdate both lists. Reply in exactly this format and nothing else:\nCHAT:\n- up to 10 short bullet points: topics, decisions, facts, open tasks\nUSER:\n- up to 10 short bullet points of lasting facts about the user (name, work, preferences, goals). Keep earlier facts unless contradicted. Write "- none" if nothing is known.';
+  else prompt = 'Current notes about this chat:\n' + (c.memory || '(none)') + '\n\nNew messages:\n' + convo + '\n\nRewrite the notes so they include the important new points: topics, decisions, facts, open tasks. At most 10 short bullet points, each starting with "- ". Output only the bullet points.';
   const job = (async () => {
     const out = cleanOutput(await complete([{ role: 'system', content: 'You keep short, accurate memory notes. Output only the notes.' }, { role: 'user', content: prompt }], { temp: 0.2, max: 320 }));
     if (memCancel) return;
     if (isAdv) { if (out.trim()) c.memory = tidyBullets(out); }
     else {
-      const m = out.match(/CHAT:\s*([\s\S]*?)(?:\n\s*USER:\s*([\s\S]*))?$/i);
-      if (m) {
-        if (m[1] && m[1].trim()) c.memory = tidyBullets(m[1]);
-        if (m[2] && state.settings.aboutAuto) { const u = tidyBullets(m[2]); if (u.trim() && !/^-\s*none\.?$/i.test(u.trim())) state.profile.about = u; }
-      } else if (out.trim()) c.memory = tidyBullets(out);
+      if (out.trim()) c.memory = tidyBullets(out);
+      const userText = msgs.filter((x) => x.role === 'user').map((x) => x.content).join('\n');
+      if (state.settings.aboutAuto && !memCancel && /\b(i am|i'm|im|my|i work|i live|i like|i love|i prefer|i hate|call me|saya|nama)\b/i.test(userText)) {
+        const u = cleanOutput(await complete([{ role: 'system', content: 'You keep a short list of lasting facts about the user. Output only the list.' }, { role: 'user', content: 'Known facts about the user:\n' + (state.profile.about || '(none)') + '\n\nThe user recently wrote:\n' + clip(userText, 1500) + '\n\nUpdate the list of lasting facts about the user: name, work, location, family, preferences, goals. Keep known facts unless the user contradicted them. Ignore questions and one-off requests. At most 10 bullet points, each starting with "- ". If nothing is known, write "- none".' }], { temp: 0.1, max: 200 }));
+        if (!memCancel) { const b = tidyBullets(u); if (b.trim() && !/^-\s*none\.?$/i.test(b.trim())) state.profile.about = b; }
+      }
     }
     c.sinceMem = 0; save();
   })();
