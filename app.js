@@ -325,7 +325,7 @@ function advSystem(c) {
     'PLAYER: ' + p.name + ', ' + p.cls + '. HP ' + p.hp + '/' + p.maxhp + ', level ' + p.lvl + ', XP ' + p.xp + ', gold ' + p.gold + '. Inventory: ' + (p.inv.join(', ') || 'nothing') + '.',
     'CHARACTERS YOU VOICE:\n' + cast,
     'FORMAT RULES (very important):',
-    '- Every line starts with the speaker name and a colon, like this:\nDM: (what happens, in your own words)\nCharacterName: "(what they say)" *(what they do)*',
+    '- Every line starts with the speaker name and a colon. Format example only, never copy its words:\nDM: A gull snatches a fish from a market stall.\nMira: "Oi, thief!" *throws a shoe at it*',
     '- Characters speak in first person. Speech goes in "double quotes", actions in *asterisks*.',
     '- The player message starts with [To ...] naming who the player is talking to. Only those characters answer. If it says Everyone, choose who reacts. The DM may add one line of narration.',
     '- Never write a line for ' + p.name + ', never decide what ' + p.name + ' does, and never write [To ...]. Stop and let the player decide.',
@@ -520,7 +520,9 @@ function parseAdv(c, text) {
 function advTrim(c, t) {
   const nm = c.adv.player.name.replace(/[.*+?^()|[\]\\{}$]/g, '\\$&');
   const re = new RegExp('(^|\\n)\\s*[*_]*\\s*(' + nm + '\\s*[*_]*\\s*:|\\[To\\b)', 'i');
-  const m = re.exec(t); return m ? t.slice(0, m.index) : t;
+  const m = re.exec(t); let out = m ? t.slice(0, m.index) : t;
+  out = out.replace(new RegExp('\\n\\s*[*_]*\\s*(' + nm + '|\\[To?)\\s*[*_]*\\s*$', 'i'), '');
+  return out.replace(/^\s*DM:\s*A gull snatches[^\n]*\n?/i, '').replace(/^\s*Mira:\s*"Oi, thief[^\n]*\n?/im, '');
 }
 function stripTags(t) { return String(t || '').replace(/\[(HP|GOLD|XP|ITEM|SCENE|NEW|To)\b[^\]]*\]/gi, '').replace(/[ \t]+$/gm, ''); }
 function normScene(s) { s = String(s || '').toLowerCase().trim(); if (SCENES[s]) return s; for (const k in SCENES) if (s.indexOf(k) >= 0) return k; if (/inn|pub/.test(s)) return 'tavern'; if (/cave|crypt|ruin|tomb|shrine/.test(s)) return 'dungeon'; if (/wood|jungle|field|road/.test(s)) return 'forest'; if (/ship|sea|dock|harbo/.test(s)) return 'port'; if (/fight|combat/.test(s)) return 'battle'; return null; }
