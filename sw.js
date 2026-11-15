@@ -1,13 +1,13 @@
 // Popeye AI service worker: keeps the app usable offline.
 // Model files are cached separately by WebLLM and are never touched here.
-const VERSION = 'popeye-v1.0.0';
+const VERSION = 'popeye-v1.1.0';
 const SHELL = ['./', './index.html', './app.js', './style.css', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 const LIB = 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.86/+esm';
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(VERSION);
-    await cache.addAll(SHELL);
+    await cache.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })));
     try { await cache.add(LIB); } catch (err) { /* cached on first use instead */ }
     await self.skipWaiting();
   })());
