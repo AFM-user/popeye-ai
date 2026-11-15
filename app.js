@@ -85,7 +85,7 @@ function defaultPersonas() {
   ];
 }
 function defaultSettings() {
-  return { modelId: SAFE_DEFAULT, maxTokens: 400, ctx: 4096, activeChatId: null, autoMem: true, memEvery: 4, aboutAuto: true, sound: { ui: true, sfx: true, music: true, uiVol: 0.4, sfxVol: 0.8, musicVol: 0.5 } };
+  return { modelId: SAFE_DEFAULT, maxTokens: 400, ctx: 4096, activeChatId: null, autoMem: true, memEvery: 4, aboutAuto: true, theme: 'auto', sound: { ui: true, sfx: true, music: true, uiVol: 0.4, sfxVol: 0.8, musicVol: 0.5 } };
 }
 function fresh() { return { version: 2, personas: defaultPersonas(), chats: [], profile: { about: '' }, customFaces: [], music: {}, settings: defaultSettings() }; }
 
@@ -975,7 +975,7 @@ function renderDrawer() {
   if (!advs.length) d.appendChild(el('div', 'muted', '&nbsp; No adventures yet'));
   advs.forEach((c) => d.appendChild(chatItem(c)));
   d.appendChild(el('div', 'sec', 'More'));
-  [['👤 Personas', openPersonas], ['🧠 About you (memory)', openAboutYou], ['🤖 Model', openModelSheet], ['🔊 Sound & music', openSoundSheet], ['⚙️ Settings & backup', openSettings], ['ℹ️ About & credits', openCredits]].forEach((x) => { const b = el('button', 'link', '<span>' + x[0] + '</span><span class="muted">›</span>'); b.onclick = () => { closeDrawer(); x[1](); }; d.appendChild(b); });
+  [['🌗 Appearance: ' + ({ auto: 'Auto', light: 'Light', dark: 'Dark' })[state.settings.theme || 'auto'], openAppearance], ['👤 Personas', openPersonas], ['🧠 About you (memory)', openAboutYou], ['🤖 Model', openModelSheet], ['🔊 Sound & music', openSoundSheet], ['⚙️ Settings & backup', openSettings], ['ℹ️ About & credits', openCredits]].forEach((x) => { const b = el('button', 'link', '<span>' + x[0] + '</span><span class="muted">›</span>'); b.onclick = () => { closeDrawer(); x[1](); }; d.appendChild(b); });
   d.appendChild(el('div', 'ver', 'Version ' + APP_VERSION));
 }
 function openChatOptions(c) {
@@ -1194,6 +1194,19 @@ function openCredits() {
     '<div class="sec">Credits</div><p class="muted">AI engine: WebLLM (MLC AI), Apache 2.0.<br>Models: Qwen (Alibaba), Llama (Meta), Gemma (Google), Dolphin 3.0 (Cognitive Computations, conversion by huggingkot), DeepSeek R1 Distill abliterated (huihui-ai, conversion by willopcbeta, program file by mitulagr2).<br>Photo text reading: Tesseract.js. PDF: pdf.js (Mozilla). Word: mammoth.js.<br>Sound effects and jingles: Kenney (kenney.nl), CC0.<br>Music, if added by you: Original music by Marllon Silva (xDeviruchi).<br>Character portraits: provided by the owner.</p>');
 }
 
+function applyTheme() {
+  const t = (state && state.settings.theme) || 'auto'; const root = document.documentElement;
+  if (t === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
+  const dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.setAttribute('content', dark ? '#14161c' : '#f6f4ef');
+}
+function openAppearance() {
+  const cur = state.settings.theme || 'auto';
+  openSheet('Appearance', '<div class="btnrow">' + [['auto', '📱 Auto'], ['light', '☀️ Light'], ['dark', '🌙 Dark']].map((x) => '<button class="btn' + (x[0] === cur ? ' pri' : '') + '" data-th="' + x[0] + '">' + x[1] + '</button>').join('') + '</div><p class="muted">Auto follows your iPhone setting.</p>', (b) => {
+    b.querySelectorAll('[data-th]').forEach((x) => { x.onclick = () => { state.settings.theme = x.dataset.th; saveNow(); applyTheme(); openAppearance(); }; });
+  });
+}
+
 // ---------- events and start ----------
 function bindUI() {
   $('btnMenu').onclick = openDrawer;
@@ -1217,6 +1230,8 @@ function bindUI() {
 async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   state = migrate(loadState());
+  applyTheme();
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch (e) {}
   ensureActive(); saveNow();
   bindUI(); renderAll();
   $('boot').hidden = true;
