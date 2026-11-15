@@ -15,6 +15,9 @@ const CUSTOM_MODELS = [
   { model: 'https://huggingface.co/Jay0628/Dolphin3.0-Qwen2.5-1.5B-MLC-q4f16_1', model_id: 'Dolphin3.0-Qwen2.5-1.5B-MLC-q4f16_1', model_lib: QWEN15_LIB, vram_required_MB: 1629.75, low_resource_required: true, overrides: { context_window_size: 4096 } },
   { model: 'https://huggingface.co/Sandoche/Llama-3.2-1B-Instruct-abliterated-q4f16_1-MLC', model_id: 'Llama-3.2-1B-Instruct-abliterated-q4f16_1-MLC', model_lib: LLAMA1B_OLD_LIB, vram_required_MB: 879, low_resource_required: true, webllm: 'old', overrides: { context_window_size: 4096 } },
   { model: 'https://huggingface.co/Jay0628/Qwen3-0.6B-abliterated-MLC-q4f16_1', model_id: 'Qwen3-0.6B-abliterated-MLC-q4f16_1', model_lib: QWEN3_06_LIB, vram_required_MB: 1403, low_resource_required: true, overrides: { context_window_size: 4096 } },
+  { model: 'https://huggingface.co/RickyRoscoe/Dolphin3.0-Llama3.2-1B-q4f16_1-MLC', model_id: 'Dolphin3.0-Llama3.2-1B-q4f16_1-MLC', model_lib: 'https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_86/base/Llama-3.2-1B-Instruct-q4f16_1_cs1k-webgpu.wasm', vram_required_MB: 879.04, low_resource_required: true, overrides: { context_window_size: 4096 } },
+  { model: 'https://huggingface.co/Jay0628/Dolphin3.0-Qwen2.5-0.5B-MLC-q4f16_1', model_id: 'Dolphin3.0-Qwen2.5-0.5B-MLC-q4f16_1', model_lib: 'https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_86/base/Qwen2-0.5B-Instruct-q4f16_1_cs1k-webgpu.wasm', vram_required_MB: 944.62, low_resource_required: true, overrides: { context_window_size: 4096 } },
+  { model: 'https://huggingface.co/Jay0628/SmolLM2-360M-heretic-MLC-q4f16_1', model_id: 'SmolLM2-360M-heretic-MLC-q4f16_1', model_lib: 'https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_86/base/SmolLM2-360M-Instruct-q4f16_1_cs1k-webgpu.wasm', vram_required_MB: 376.06, low_resource_required: true, overrides: { context_window_size: 4096 } },
   { model: 'https://huggingface.co/willopcbeta/DeepSeek-R1-Distill-Qwen-1.5B-abliterated-q4f16_1-MLC', model_id: 'DeepSeek-R1-Distill-Qwen-1.5B-abliterated-q4f16_1-MLC', model_lib: 'https://huggingface.co/mitulagr2/DeepSeek-R1-Distill-Qwen-1.5B-q4f16_1-MLC/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-q4f16_1-MLC-webgpu.wasm', vram_required_MB: 1800, low_resource_required: true, webllm: 'old', overrides: { context_window_size: 4096 } }
 ];
 
@@ -23,6 +26,9 @@ const RECOMMENDED = [
   { id: 'Dolphin3.0-Qwen2.5-1.5B-MLC-q4f16_1', label: 'Dolphin 3.0 Qwen 2.5 1.5B', note: 'uncensored, same size as Qwen' },
   { id: 'Llama-3.2-1B-Instruct-abliterated-q4f16_1-MLC', label: 'Llama 3.2 1B (abliterated)', note: 'no refusals, fast and light' },
   { id: 'Qwen3-0.6B-abliterated-MLC-q4f16_1', label: 'Qwen 3 0.6B (abliterated)', note: 'no refusals, tiny and fastest, weakest' },
+  { id: 'Dolphin3.0-Llama3.2-1B-q4f16_1-MLC', label: 'Dolphin 3.0 Llama 3.2 1B', note: 'uncensored, fast and light' },
+  { id: 'Dolphin3.0-Qwen2.5-0.5B-MLC-q4f16_1', label: 'Dolphin 3.0 Qwen 2.5 0.5B', note: 'uncensored, tiny and fast, weaker' },
+  { id: 'SmolLM2-360M-heretic-MLC-q4f16_1', label: 'SmolLM2 360M (heretic)', note: 'no refusals, smallest, very basic' },
   { id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC', label: 'Llama 3.2 1B', note: 'fast and light' },
   { id: 'gemma3-1b-it-q4f16_1-MLC', label: 'Gemma 3 1B', note: 'light' },
   { id: 'Qwen3-1.7B-q4f16_1-MLC', label: 'Qwen 3 1.7B', note: 'may be tight' },
@@ -1197,7 +1203,7 @@ function openSettings() {
 }
 function openCredits() {
   openSheet('About & credits', '<p><b>Popeye AI ' + APP_VERSION + '</b>. Your private AI that runs on your phone.</p><p class="muted">' + esc(LIMITS) + '</p>' +
-    '<div class="sec">Credits</div><p class="muted">AI engine: WebLLM (MLC AI), Apache 2.0.<br>Models: Qwen (Alibaba), Llama (Meta), Gemma (Google), Dolphin 3.0 (Cognitive Computations, conversion by Jay0628), Llama 3.2 1B abliterated (conversion by Sandoche), Qwen 3 0.6B abliterated (conversion by Jay0628), DeepSeek R1 Distill abliterated (huihui-ai, conversion by willopcbeta, program file by mitulagr2).<br>Photo text reading: Tesseract.js. PDF: pdf.js (Mozilla). Word: mammoth.js.<br>Sound effects and jingles: Kenney (kenney.nl), CC0.<br>Music, if added by you: Original music by Marllon Silva (xDeviruchi).<br>Character portraits: provided by the owner.</p>');
+    '<div class="sec">Credits</div><p class="muted">AI engine: WebLLM (MLC AI), Apache 2.0.<br>Models: Qwen (Alibaba), Llama (Meta), Gemma (Google), Dolphin 3.0 (Cognitive Computations, conversion by Jay0628), Llama 3.2 1B abliterated (conversion by Sandoche), Qwen 3 0.6B abliterated, Dolphin 0.5B and SmolLM2 heretic (conversions by Jay0628), Dolphin Llama 1B (conversion by RickyRoscoe), DeepSeek R1 Distill abliterated (huihui-ai, conversion by willopcbeta, program file by mitulagr2).<br>Photo text reading: Tesseract.js. PDF: pdf.js (Mozilla). Word: mammoth.js.<br>Sound effects and jingles: Kenney (kenney.nl), CC0.<br>Music, if added by you: Original music by Marllon Silva (xDeviruchi).<br>Character portraits: provided by the owner.</p>');
 }
 
 function applyTheme() {
