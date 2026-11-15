@@ -428,6 +428,7 @@ function buildSend(c, msg, text, atts) {
   let s = text;
   if (msg.to && msg.to.length) s = '[To ' + msg.to.join(', ') + '] ' + s;
   else if (c.kind === 'adv') s = '[To Everyone] ' + s;
+  if (c.kind === 'adv' && text) { const who = (msg.to || []).filter((n) => n !== 'Everyone'); const chars = who.filter((n) => n !== 'DM'); if (chars.length) s += '\n(Reply as ' + chars.join(' and ') + ': each of them speaks on a line starting with their name and a colon.)'; else if (who.length) s += '\n(Reply as DM.)'; }
   if (atts.length) {
     const budgetChars = Math.max(1500, Math.floor((ctxWindow() - state.settings.maxTokens - estTokens(systemFor(c)) - 500) * 3.2));
     const per = Math.floor(budgetChars / atts.length);
@@ -1224,7 +1225,7 @@ async function init() {
   if (stuck) {
     localStorage.removeItem(LOADING_KEY);
     state.settings.modelId = SAFE_DEFAULT; saveNow();
-    openSheet('Loading stopped', '<p>Loading <b>' + esc(modelLabel(stuck)) + '</b> stopped before it finished. The phone probably ran out of memory.</p><p>Switched to <b>' + esc(modelLabel(SAFE_DEFAULT)) + '</b>, which fits iPhone.</p><div class="btnrow"><button class="btn pri" id="stLoad">Load ' + esc(modelLabel(SAFE_DEFAULT)) + '</button></div>', (b) => { b.querySelector('#stLoad').onclick = () => { closeSheet(); loadModel(SAFE_DEFAULT); }; });
+    openSheet('Loading stopped', '<p>Loading <b>' + esc(modelLabel(stuck)) + '</b> stopped before it finished. The phone probably ran out of memory.</p>' + (stuck === SAFE_DEFAULT ? '<p>You can try again.</p>' : '<p>Switched to <b>' + esc(modelLabel(SAFE_DEFAULT)) + '</b>, which fits iPhone.</p>') + '<div class="btnrow"><button class="btn pri" id="stLoad">Load ' + esc(modelLabel(SAFE_DEFAULT)) + '</button></div>', (b) => { b.querySelector('#stLoad').onclick = () => { closeSheet(); loadModel(SAFE_DEFAULT); }; });
     return;
   }
   try {
