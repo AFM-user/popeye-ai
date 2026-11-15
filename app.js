@@ -293,6 +293,7 @@ function extraFor(id) { return /qwen3/i.test(id || '') ? { extra_body: { enable_
 function cleanOutput(t) { return String(t || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/<think>[\s\S]*$/, '').replace(/^\s+/, ''); }
 async function complete(messages, opts) {
   const req = Object.assign({ messages: messages, temperature: opts.temp == null ? 0.7 : opts.temp, max_tokens: opts.max || state.settings.maxTokens, frequency_penalty: 0.2 }, extraFor(loadedModel));
+  if (opts.stop) req.stop = opts.stop;
   if (opts.onToken) {
     req.stream = true;
     const chunks = await engine.chat.completions.create(req);
@@ -324,13 +325,13 @@ function advSystem(c) {
     'PLAYER: ' + p.name + ', ' + p.cls + '. HP ' + p.hp + '/' + p.maxhp + ', level ' + p.lvl + ', XP ' + p.xp + ', gold ' + p.gold + '. Inventory: ' + (p.inv.join(', ') || 'nothing') + '.',
     'CHARACTERS YOU VOICE:\n' + cast,
     'FORMAT RULES (very important):',
-    '- Every line starts with the speaker name and a colon, for example:\nDM: The tavern door creaks open and a hooded stranger walks in.\nEldra: "Careful." *rests a hand on her bow*',
+    '- Every line starts with the speaker name and a colon, like this:\nDM: (what happens, in your own words)\nCharacterName: "(what they say)" *(what they do)*',
     '- Characters speak in first person. Speech goes in "double quotes", actions in *asterisks*.',
     '- The player message starts with [To ...] naming who the player is talking to. Only those characters answer. If it says Everyone, choose who reacts. The DM may add one line of narration.',
-    '- Never speak or act for ' + p.name + '. End so the player can decide what to do.',
+    '- Never write a line for ' + p.name + ', never decide what ' + p.name + ' does, and never write [To ...]. Stop and let the player decide.',
     '- Keep it short: 1 to 4 lines, each under 60 words.',
     '- For a new character, give a name, speak as "Name: ...", and once add [NEW: Name | short description | male or female].',
-    '- Track changes with tags at the end of a line: [HP -3] [HP +5] [GOLD +10] [XP +50] [ITEM + rope] [ITEM - torch] [SCENE: forest].',
+    '- Only when something really changes, add a tag at the end of that line: [HP -3] (player hurt), [HP +5] (healed), [GOLD +10], [XP +50], [ITEM + rope], [ITEM - torch], [SCENE: forest]. Never invent changes.',
     '- Scenes: town, tavern, forest, travel, dungeon, castle, port, shop, battle, boss, victory, night, snow, tension.',
     '- For risky actions ask for a roll like [ROLL d20 for Stealth]. When the player sends a roll, narrate the result: 1 is a disaster, 10 is so-so, 20 is amazing.'
   ];
@@ -459,9 +460,9 @@ async function generate(c) {
     await fitContext(c);
     const msgs = [{ role: 'system', content: systemFor(c) }].concat(historyFor(c));
     const temp = c.kind === 'adv' ? 0.85 : (personaOf(c).temp == null ? 0.7 : personaOf(c).temp);
-    const max = thinkingModel() ? Math.max(state.settings.maxTokens, 900) : state.settings.maxTokens;
-    const out = await complete(msgs, { temp: temp, max: max, onToken: (t) => { reply.content = cleanOutput(t); reply.thinking = /<think>(?![\s\S]*<\/think>)/.test(t); const now = performance.now(); if (now - last > 70) { last = now; updateStreaming(c, reply); } } });
-    reply.content = cleanOutput(out).trim();
+    let max = thinkingModel() ? Math.max(state.settings.maxTokens, 900) : state.settings.maxTokens; if (c.kind === 'adv' && !thinkingModel()) max = Math.min(max, 280); const stop = c.kind === 'adv' ? ['\n' + c.adv.player.name + ':', '\n' + c.adv.player.name + ' :', '\n[To ', '\n**' + c.adv.player.name] : undefined;
+    const out = await complete(msgs, { temp: temp, max: max, stop: stop, onToken: (t) => { reply.content = c.kind === 'adv' ? advTrim(c, cleanOutput(t)) : cleanOutput(t); reply.thinking = /<think>(?![\s\S]*<\/think>)/.test(t); const now = performance.now(); if (now - last > 70) { last = now; updateStreaming(c, reply); } } });
+    reply.content = (c.kind === 'adv' ? advTrim(c, cleanOutput(out)) : cleanOutput(out)).trim();
     if (!reply.content) { reply.content = 'No reply came back. Tap Retry.'; reply.error = true; }
   } catch (e) {
     const m = String((e && e.message) || e);
@@ -515,7 +516,12 @@ function parseAdv(c, text) {
   segs.forEach((s) => { s.text = s.text.replace(/\n+$/, ''); });
   return segs.filter((s) => s.text.trim());
 }
-function stripTags(t) { return String(t || '').replace(/\[(HP|GOLD|XP|ITEM|SCENE|NEW)\b[^\]]*\]/gi, '').replace(/[ \t]+$/gm, ''); }
+function advTrim(c, t) {
+  const nm = c.adv.player.name.replace(/[.*+?^()|[\]\\{}$]/g, '\\$&');
+  const re = new RegExp('(^|\\n)\\s*[*_]*\\s*(' + nm + '\\s*[*_]*\\s*:|\\[To\\b)', 'i');
+  const m = re.exec(t); return m ? t.slice(0, m.index) : t;
+}
+function stripTags(t) { return String(t || '').replace(/\[(HP|GOLD|XP|ITEM|SCENE|NEW|To)\b[^\]]*\]/gi, '').replace(/[ \t]+$/gm, ''); }
 function normScene(s) { s = String(s || '').toLowerCase().trim(); if (SCENES[s]) return s; for (const k in SCENES) if (s.indexOf(k) >= 0) return k; if (/inn|pub/.test(s)) return 'tavern'; if (/cave|crypt|ruin|tomb|shrine/.test(s)) return 'dungeon'; if (/wood|jungle|field|road/.test(s)) return 'forest'; if (/ship|sea|dock|harbo/.test(s)) return 'port'; if (/fight|combat/.test(s)) return 'battle'; return null; }
 function detectScene(t, cur) {
   const s = stripTags(t).toLowerCase();
