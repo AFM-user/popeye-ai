@@ -321,6 +321,8 @@ async function complete(messages, opts) {
   const r = await engine.chat.completions.create(req);
   return (r.choices && r.choices[0] && r.choices[0].message && r.choices[0].message.content) || '';
 }
+async function libFor(id) { const r = modelRecord(id); return r && r.webllm === 'old' ? await import(WEBLLM_OLD) : webllm; }
+async function isCached(id) { try { const lib = await libFor(id); return await lib.hasModelInCache(id, appConfig()); } catch (e) { return false; } }
 function thinkingModel() { return /deepseek-r1|r1-distill/i.test(loadedModel || ''); }
 
 // ---------- prompts ----------
@@ -570,7 +572,6 @@ function afterAdvReply(c, m) {
   while ((r = ri.exec(t))) { const name = r[2].trim().slice(0, 40); if (r[1] === '+') { p.inv.push(name); fx.push('🎒 +' + name); gotItem = true; } else { const ix = p.inv.findIndex((x) => x.toLowerCase() === name.toLowerCase()); if (ix >= 0) p.inv.splice(ix, 1); fx.push('🎒 -' + name); } }
   const rn = /\[NEW\s*:?\s*([^|\]]+)\|?([^|\]]*)\|?([^\]]*)\]/gi;
   while ((r = rn.exec(t))) { const x = addCast(c, r[1], r[2].trim(), r[3].trim()); if (x && x.id) fx.push('👤 ' + x.name + ' joined the story'); }
-  parseAdv(c, t).forEach((s) => { if (!s.who.id && !s.who.player) { const x = addCast(c, s.who.name, '', ''); if (x && x.id) fx.push('👤 ' + x.name + ' joined the story'); } });
   const rs = /\[SCENE\s*:?\s*([^\]]+)\]/i.exec(t);
   const scene = rs ? normScene(rs[1]) : detectScene(t, a.scene);
   if (scene && scene !== a.scene) { a.scene = scene; fx.push(SCENES[scene].e + ' ' + SCENES[scene].l); }
@@ -1160,12 +1161,12 @@ async function openModelSheet() {
     '<div class="sec">This device</div><div class="muted" id="mDev">Checking...</div><div class="btnrow"><button class="btn danger" id="mDel">Delete downloaded copy of this model</button></div>';
   openSheet('Model', html, async (b) => {
     const q = (s) => b.querySelector(s);
-    const info = async () => { const id = q('#mSel').value; const r = RECOMMENDED.find((x) => x.id === id); const m = modelRecord(id); let cached = false; try { cached = await webllm.hasModelInCache(id, appConfig()); } catch (e) {} q('#mInfo').textContent = (r ? r.note + '. ' : '') + (m && m.vram_required_MB ? 'Needs about ' + (m.vram_required_MB / 1024).toFixed(1) + ' GB of memory. ' : '') + (cached ? 'Downloaded on this device.' : 'Not downloaded yet.') + (loadedModel === id ? ' Loaded now.' : ''); };
+    const info = async () => { const id = q('#mSel').value; const r = RECOMMENDED.find((x) => x.id === id); const m = modelRecord(id); let cached = false; cached = await isCached(id); q('#mInfo').textContent = (r ? r.note + '. ' : '') + (m && m.vram_required_MB ? 'Needs about ' + (m.vram_required_MB / 1024).toFixed(1) + ' GB of memory. ' : '') + (cached ? 'Downloaded on this device.' : 'Not downloaded yet.') + (loadedModel === id ? ' Loaded now.' : ''); };
     q('#mSel').onchange = info; info();
     q('#mLoad').onclick = () => { const id = q('#mSel').value; if (IS_IOS && RECOMMENDED.some((r) => r.heavy && r.id === id)) toast('Warning: this model is probably too big for iPhone.', 4000); closeSheet(); loadModel(id); };
     q('#mCtx').onchange = () => { state.settings.ctx = parseInt(q('#mCtx').value, 10); saveNow(); if (loadedModel) { closeSheet(); loadModel(loadedModel); } };
     q('#mTok').oninput = () => { state.settings.maxTokens = parseInt(q('#mTok').value, 10); q('#mTv').textContent = state.settings.maxTokens; save(); };
-    q('#mDel').onclick = async () => { const id = q('#mSel').value; if (id === loadedModel) { toast('Load a different model first'); return; } try { await webllm.deleteModelAllInfoInCache(id, appConfig()); toast('Deleted'); info(); } catch (e) { toast('Could not delete: ' + e.message); } };
+    q('#mDel').onclick = async () => { const id = q('#mSel').value; if (id === loadedModel) { toast('Load a different model first'); return; } try { await (await libFor(id)).deleteModelAllInfoInCache(id, appConfig()); toast('Deleted'); info(); } catch (e) { toast('Could not delete: ' + e.message); } };
     let dev = '';
     try { const ad = navigator.gpu ? await navigator.gpu.requestAdapter() : null; dev += ad ? 'WebGPU ready · shader-f16 ' + (ad.features.has('shader-f16') ? 'yes' : 'no') + ' · max buffer ' + (ad.limits.maxBufferSize / 1073741824).toFixed(1) + ' GB' : 'No WebGPU on this browser'; } catch (e) { dev += 'WebGPU check failed'; }
     try { const est = await navigator.storage.estimate(); dev += '<br>Storage used ' + (est.usage / 1073741824).toFixed(2) + ' GB of ' + (est.quota / 1073741824).toFixed(0) + ' GB'; } catch (e) {}
@@ -1259,7 +1260,7 @@ async function init() {
     await getWebLLM();
     if (IS_IOS && RECOMMENDED.some((r) => r.heavy && r.id === state.settings.modelId)) { state.settings.modelId = SAFE_DEFAULT; saveNow(); }
     updateModelPill();
-    if (navigator.gpu && await webllm.hasModelInCache(state.settings.modelId, appConfig())) loadModel(state.settings.modelId);
+    if (navigator.gpu && await isCached(state.settings.modelId)) loadModel(state.settings.modelId);
   } catch (e) { toast('Offline and the AI library is not cached yet. Connect once to set up.', 5000); }
 }
 init();
