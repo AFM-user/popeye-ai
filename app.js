@@ -2,17 +2,22 @@
 // The model runs on this device through WebLLM (WebGPU). Nothing is sent to any server.
 import * as webllm from 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.86/+esm';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const STORE_KEY = 'popeye.v1';
 const LOADING_KEY = 'popeye.loading';
 
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// iPhone web apps are killed above roughly 1.5 GB, so 3B models only suit computers.
+const SAFE_DEFAULT = 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC';
 const RECOMMENDED = [
-  { id: 'Hermes-3-Llama-3.2-3B-q4f16_1-MLC', label: 'Hermes 3 (3B): best for stories and role-play' },
-  { id: 'Llama-3.2-3B-Instruct-q4f16_1-MLC', label: 'Llama 3.2 (3B): good all-rounder' },
-  { id: 'Qwen2.5-3B-Instruct-q4f16_1-MLC', label: 'Qwen 2.5 (3B): follows instructions well' },
-  { id: 'gemma-4-E2B-it-q4f16_1-MLC', label: 'Gemma 4 E2B: newest, heavier (experimental)' },
+  { id: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', label: 'Qwen 2.5 (1.5B): best that fits iPhone' },
   { id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC', label: 'Llama 3.2 (1B): fast and light' },
-  { id: 'gemma3-1b-it-q4f16_1-MLC', label: 'Gemma 3 (1B): fast and light' }
+  { id: 'gemma3-1b-it-q4f16_1-MLC', label: 'Gemma 3 (1B): fast and light' },
+  { id: 'Qwen3-1.7B-q4f16_1-MLC', label: 'Qwen 3 (1.7B): smarter, may be tight on iPhone' },
+  { id: 'Hermes-3-Llama-3.2-3B-q4f16_1-MLC', label: 'Hermes 3 (3B): best stories, too big for iPhone', heavy: true },
+  { id: 'Llama-3.2-3B-Instruct-q4f16_1-MLC', label: 'Llama 3.2 (3B): too big for iPhone', heavy: true },
+  { id: 'Qwen2.5-3B-Instruct-q4f16_1-MLC', label: 'Qwen 2.5 (3B): too big for iPhone', heavy: true },
+  { id: 'gemma-4-E2B-it-q4f16_1-MLC', label: 'Gemma 4 E2B: too big for iPhone', heavy: true }
 ];
 
 const GM_PROMPT = [
@@ -99,7 +104,7 @@ function shortName(id) { return (id || '').replace(/-q\d.*$/, '').replace(/-MLC.
 function gb(mb) { return mb ? (mb / 1024).toFixed(1) + ' GB' : 'unknown'; }
 
 // ---------- state ----------
-function defaultSettings() { return { modelId: RECOMMENDED[0].id, maxTokens: 400, activeChatId: null }; }
+function defaultSettings() { return { modelId: SAFE_DEFAULT, maxTokens: 400, ctx: IS_IOS ? 2048 : 4096, activeChatId: null }; }
 function loadState() {
   try {
     const raw = safeGet(STORE_KEY);
@@ -144,10 +149,12 @@ function variantFor(id) {
   const alt = id.replace('q4f16_1', 'q4f32_1');
   return modelRec(alt) ? alt : id;
 }
-function ctxWindow() {
-  const r = modelRec(loadedModel);
+let loadedCtx = 4096;
+function nativeCtx(id) {
+  const r = modelRec(id);
   return (r && r.overrides && r.overrides.context_window_size) || 4096;
 }
+function ctxWindow() { return Math.min(nativeCtx(loadedModel), loadedCtx || 4096); }
 
 // ---------- WebGPU ----------
 async function detectGPU() {
@@ -187,13 +194,20 @@ async function loadModel(id) {
   try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
   const cb = (r) => { loadProgress = r.progress || 0; loadText = r.text || ''; renderModelStatus(); };
   try {
-    if (!engine) {
-      engine = await webllm.CreateMLCEngine(id, { initProgressCallback: cb });
-    } else {
-      engine.setInitProgressCallback(cb);
-      await engine.reload(id);
+    // A smaller context window means a smaller memory cache on the phone.
+    let ctx = Math.min(nativeCtx(id), state.settings.ctx || 4096);
+    const create = async (opts) => {
+      if (!engine) engine = await webllm.CreateMLCEngine(id, { initProgressCallback: cb }, opts);
+      else { engine.setInitProgressCallback(cb); await engine.reload(id, opts); }
+    };
+    try { await create({ context_window_size: ctx }); }
+    catch (e1) {
+      if (!/sliding|context_window/i.test(errText(e1))) throw e1;
+      await create(undefined);
+      ctx = nativeCtx(id);
     }
     loadedModel = id;
+    loadedCtx = ctx;
     modelStatus = 'ready';
     state.settings.modelId = id;
     save();
@@ -586,12 +600,13 @@ function openModelSheet(note) {
     if (note) b.append(el('p', { class: 'warn', text: note }));
     if (!gpuInfo.ok) { b.append(el('p', { class: 'warn', text: gpuInfo.reason }), closeRow()); return; }
     const sel = el('select', { id: 'mSel' });
-    const g1 = el('optgroup', { label: 'Recommended' });
+    const g1 = el('optgroup', { label: IS_IOS ? 'Recommended for iPhone' : 'Smaller models' });
+    const gH = el('optgroup', { label: IS_IOS ? 'Too big for iPhone (will likely crash)' : 'Larger models (better quality)' });
     for (const r of RECOMMENDED) {
       const id = variantFor(r.id);
       const rec = modelRec(id);
       if (!rec || (needsF16(rec) && !gpuInfo.f16)) continue;
-      g1.append(el('option', { value: id, text: r.label }));
+      (r.heavy ? gH : g1).append(el('option', { value: id, text: r.label }));
     }
     const g2 = el('optgroup', { label: 'All models (advanced)' });
     for (const m of webllm.prebuiltAppConfig.model_list) {
@@ -599,7 +614,7 @@ function openModelSheet(note) {
       if (needsF16(m) && !gpuInfo.f16) continue;
       g2.append(el('option', { value: m.model_id, text: m.model_id + ' (' + gb(m.vram_required_MB) + ')' }));
     }
-    sel.append(g1, g2);
+    sel.append(g1, gH, g2);
     sel.value = loadedModel || variantFor(state.settings.modelId);
     if (!sel.value) sel.selectedIndex = 0;
     sel.addEventListener('change', refreshModelSheet);
@@ -607,6 +622,14 @@ function openModelSheet(note) {
     const len = el('input', { type: 'range', id: 'mLen', min: '120', max: '800', step: '20', value: String(state.settings.maxTokens) });
     const lenVal = el('span', { text: ' (' + state.settings.maxTokens + ' tokens)' });
     len.addEventListener('input', () => { state.settings.maxTokens = +len.value; lenVal.textContent = ' (' + len.value + ' tokens)'; save(); });
+    const ctxSel = el('select', { id: 'mCtx' });
+    for (const v of [1024, 2048, 4096]) ctxSel.append(el('option', { value: String(v), text: v + ' tokens' + (v === 2048 ? ' (iPhone default)' : '') }));
+    ctxSel.value = String(state.settings.ctx || 4096);
+    ctxSel.addEventListener('change', () => {
+      state.settings.ctx = +ctxSel.value;
+      save();
+      if (modelStatus === 'ready' && loadedModel) { toast('Reloading the model with the new size.'); loadModel(loadedModel); }
+    });
     b.append(
       el('label', { for: 'mSel', text: 'Model' }), sel,
       el('p', { id: 'mInfo', class: 'muted' }),
@@ -615,6 +638,7 @@ function openModelSheet(note) {
       btn,
       el('div', { class: 'row' }, el('button', { class: 'btn danger', text: 'Delete downloaded copy', onclick: () => deleteModel(sel.value) })),
       el('label', { for: 'mLen' }, 'Reply length', lenVal), len,
+      el('label', { for: 'mCtx', text: 'Conversation window (smaller uses less memory)' }), ctxSel,
       el('h3', { text: 'This device' }),
       el('p', { class: 'muted', text: deviceText() }),
       el('p', { class: 'muted', id: 'mStore' }),
@@ -842,11 +866,16 @@ async function init() {
   const boot = $('#boot');
   if (boot) boot.remove();
   window.__popeyeReady = true;
+  if (IS_IOS) {
+    const heavy = RECOMMENDED.find((x) => x.id === state.settings.modelId && x.heavy);
+    if (heavy) { state.settings.modelId = SAFE_DEFAULT; save(); }
+  }
   const unfinished = safeGet(LOADING_KEY);
   if (unfinished) {
     safeRemove(LOADING_KEY);
     modelStatus = 'error';
-    loadText = 'Last time, loading ' + shortName(unfinished) + ' did not finish. The app may have been closed, or the device ran out of memory. Tap the button to try again (finished parts are kept), or pick a smaller model.';
+    if (unfinished !== SAFE_DEFAULT) { state.settings.modelId = SAFE_DEFAULT; save(); }
+    loadText = 'Loading ' + shortName(unfinished) + ' stopped before it finished. Usually the model is too big for this device\'s memory, or the app was closed. ' + (unfinished !== SAFE_DEFAULT ? 'A smaller model is now selected: tap the button to try it.' : 'Close other apps and try again, or pick Llama 3.2 (1B).');
     renderModelStatus();
     return;
   }
