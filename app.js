@@ -3,6 +3,7 @@ const APP_VERSION = '1.2.0';
 const STORE_KEY = 'popeye.v1';
 const LOADING_KEY = 'popeye.loading';
 const WEBLLM_URL = 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.86/+esm';
+const WEBLLM_OLD = 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.79/+esm';
 const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const SAFE_DEFAULT = 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC';
 const BT = String.fromCharCode(96);
@@ -10,7 +11,7 @@ const QWEN15_LIB = 'https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs
 
 const CUSTOM_MODELS = [
   { model: 'https://huggingface.co/huggingkot/Dolphin3.0-Qwen2.5-1.5B-q4f16_1-MLC', model_id: 'Dolphin3.0-Qwen2.5-1.5B-q4f16_1-MLC', model_lib: QWEN15_LIB, vram_required_MB: 1629.75, low_resource_required: true, overrides: { context_window_size: 4096 } },
-  { model: 'https://huggingface.co/willopcbeta/DeepSeek-R1-Distill-Qwen-1.5B-abliterated-q4f16_1-MLC', model_id: 'DeepSeek-R1-Distill-Qwen-1.5B-abliterated-q4f16_1-MLC', model_lib: 'https://huggingface.co/mitulagr2/DeepSeek-R1-Distill-Qwen-1.5B-q4f16_1-MLC/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-q4f16_1-MLC-webgpu.wasm', vram_required_MB: 1800, low_resource_required: true, overrides: { context_window_size: 4096 } }
+  { model: 'https://huggingface.co/willopcbeta/DeepSeek-R1-Distill-Qwen-1.5B-abliterated-q4f16_1-MLC', model_id: 'DeepSeek-R1-Distill-Qwen-1.5B-abliterated-q4f16_1-MLC', model_lib: 'https://huggingface.co/mitulagr2/DeepSeek-R1-Distill-Qwen-1.5B-q4f16_1-MLC/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-q4f16_1-MLC-webgpu.wasm', vram_required_MB: 1800, low_resource_required: true, webllm: 'old', overrides: { context_window_size: 4096 } }
 ];
 
 const RECOMMENDED = [
@@ -242,7 +243,7 @@ function addCast(c, name, desc, gender) {
 }
 
 // ---------- model engine ----------
-let webllm = null, engine = null, loadedModel = null, loadedCtx = 0, busy = false, memBusy = null, memCancel = false, loadingModel = false;
+let engineOld = false, webllm = null, engine = null, loadedModel = null, loadedCtx = 0, busy = false, memBusy = null, memCancel = false, loadingModel = false;
 async function getWebLLM() { if (!webllm) webllm = await import(WEBLLM_URL); return webllm; }
 function appConfig() {
   const base = webllm.prebuiltAppConfig;
@@ -274,9 +275,13 @@ async function loadModel(id) {
     const progress = (p) => showLoad({ text: (p.text || '').replace(/\[.*?\]\s*/, '').slice(0, 120), progress: p.progress || 0 });
     const opts = { context_window_size: ctx };
     const ctxErr = (e) => /sliding|context_window/i.test(String(e && e.message));
+    const rec = modelRecord(id); const wantOld = !!(rec && rec.webllm === 'old');
+    const lib = wantOld ? await import(WEBLLM_OLD) : webllm;
+    if (engine && engineOld !== wantOld) { try { await engine.unload(); } catch (e) {} engine = null; }
+    engineOld = wantOld;
     if (!engine) {
-      try { engine = await webllm.CreateMLCEngine(id, { appConfig: appConfig(), initProgressCallback: progress }, opts); }
-      catch (e) { if (ctxErr(e)) engine = await webllm.CreateMLCEngine(id, { appConfig: appConfig(), initProgressCallback: progress }); else throw e; }
+      try { engine = await lib.CreateMLCEngine(id, { appConfig: appConfig(), initProgressCallback: progress }, opts); }
+      catch (e) { if (ctxErr(e)) engine = await lib.CreateMLCEngine(id, { appConfig: appConfig(), initProgressCallback: progress }); else throw e; }
     } else {
       engine.setInitProgressCallback(progress);
       try { await engine.reload(id, opts); } catch (e) { if (ctxErr(e)) await engine.reload(id); else throw e; }
@@ -464,6 +469,7 @@ async function generate(c) {
     let max = thinkingModel() ? Math.max(state.settings.maxTokens, 900) : state.settings.maxTokens; if (c.kind === 'adv' && !thinkingModel()) max = Math.min(max, 280); const stop = c.kind === 'adv' ? ['\n' + c.adv.player.name + ':', '\n' + c.adv.player.name + ' :', '\n[To ', '\n**' + c.adv.player.name] : undefined;
     const out = await complete(msgs, { temp: temp, max: max, stop: stop, onToken: (t) => { reply.content = c.kind === 'adv' ? advTrim(c, cleanOutput(t)) : cleanOutput(t); reply.thinking = /<think>(?![\s\S]*<\/think>)/.test(t); const now = performance.now(); if (now - last > 70) { last = now; updateStreaming(c, reply); } } });
     reply.content = (c.kind === 'adv' ? advTrim(c, cleanOutput(out)) : cleanOutput(out)).trim();
+    if (!reply.content && /<think>/.test(out)) reply.content = '💭 (still thinking when it reached the reply length; raise Reply length in Model settings)\n\n' + out.replace(/<\/?think>/g, '').trim().slice(-1500);
     if (!reply.content) { reply.content = 'No reply came back. Tap Retry.'; reply.error = true; }
   } catch (e) {
     const m = String((e && e.message) || e);
