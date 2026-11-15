@@ -443,6 +443,7 @@ function buildSend(c, msg, text, atts) {
   if (msg.to && msg.to.length) s = '[To ' + msg.to.join(', ') + '] ' + s;
   else if (c.kind === 'adv') s = '[To Everyone] ' + s;
   if (c.kind === 'adv' && text) { const who = (msg.to || []).filter((n) => n !== 'Everyone'); const chars = who.filter((n) => n !== 'DM'); if (chars.length) s += '\n(Reply as ' + chars.join(' and ') + ': each of them speaks on a line starting with their name and a colon.)'; else if (who.length) s += '\n(Reply as DM.)'; }
+  if (msg.mode === 'story') s = '[To DM] (Story direction from the player: ' + text + ' Narrate this happening in 2 or 3 lines, then let the player act.)';
   if (atts.length) {
     const budgetChars = Math.max(1500, Math.floor((ctxWindow() - state.settings.maxTokens - estTokens(systemFor(c)) - 500) * 3.2));
     const per = Math.floor(budgetChars / atts.length);
@@ -461,11 +462,14 @@ async function send(textOverride, opt) {
   if (!text && !atts.length) return;
   if (!loadedModel) { toast(loadingModel ? 'The model is still loading...' : 'Load a model first.'); if (!loadingModel) openModelSheet(); return; }
   await stopMemory();
-  const msg = { role: 'user', content: text, t: Date.now() };
+  let content = text, mode = null;
+  if (c.kind === 'adv' && fromInput && text && !opt.hidden) { mode = c.adv.mode || 'do'; if (mode === 'do' && !/^[*"“(]/.test(text)) content = '*' + text + '*'; else if (mode === 'say' && !/^["“]/.test(text)) content = '"' + text + '"'; }
+  const msg = { role: 'user', content: content, t: Date.now() };
+  if (mode) msg.mode = mode;
   if (opt.hidden) msg.hidden = true;
   if (c.kind === 'adv') { const to = opt.to || currentTo(c, text); if (to.length) msg.to = to; }
   if (atts.length) msg.atts = atts.map((a) => ({ name: a.name, kind: a.kind, chars: a.text.length, thumb: a.thumb || '' }));
-  msg.send = buildSend(c, msg, text, atts);
+  msg.send = buildSend(c, msg, content, atts);
   if (fromInput) { $('input').value = ''; autoGrow(); pendingAtts = []; renderAtts(); }
   c.messages.push(msg); c.updated = Date.now();
   if (!c.titled && c.kind === 'chat' && text) { c.title = clip(text.replace(/\s+/g, ' '), 40); c.titled = true; }
@@ -817,7 +821,7 @@ function fmtAdv(t) {
 // ---------- rendering ----------
 function nearBottom() { const b = $('messages'); return b.scrollHeight - b.scrollTop - b.clientHeight < 140; }
 function scrollDown(force) { const b = $('messages'); if (force || nearBottom()) requestAnimationFrame(() => { b.scrollTop = b.scrollHeight; }); }
-function renderAll() { renderHeader(); renderMessages(); renderComposer(); renderAtts(); updateModelPill(); }
+function renderAll() { const cc = activeChat(); document.body.classList.toggle('adv', !!(cc && cc.kind === 'adv')); renderHeader(); renderMessages(); renderComposer(); renderAtts(); updateModelPill(); }
 function renderHeader() {
   const c = activeChat(); if (!c) return;
   if (c.kind === 'adv') { $('chatIcon').outerHTML = '<span id="chatIcon">' + avatar(dmOf(c).face, '🎲', 'sm') + '</span>'; $('chatTitle').textContent = c.title; }
@@ -836,7 +840,7 @@ function renderSceneBar(c) {
   if (bm) bm.onclick = () => { const s = state.settings.sound; if (Music.slot && s.music) { s.music = false; musicStop(); } else { s.music = true; unlockAudio(); musicScene(a.scene, true); } saveNow(); setTimeout(() => renderSceneBar(c), 300); };
 }
 function emptyState(c) {
-  if (c.kind === 'adv') return el('div', 'empty', '<div>' + avatar(dmOf(c).face, '🎲', 'lg') + '</div><h3>' + esc(c.title) + '</h3><div>' + (loadedModel ? 'Say something to begin.' : 'Load a model (top right) to begin.') + '</div>');
+  if (c.kind === 'adv') return el('div', 'empty', '<div>' + avatar(dmOf(c).face, '🎲', 'lg') + '</div><h3>' + esc(c.title) + '</h3><div>' + (loadedModel ? 'Your tale begins. What do you do?' : 'Load a model (top right) to begin your tale.') + '</div>');
   const p = personaOf(c);
   return el('div', 'empty', '<div>' + avatar(p.face || p.emoji, p.emoji, 'lg') + '</div><h3>' + esc(p.name) + '</h3><div>' + esc(p.desc || '') + '</div>' + (loadedModel ? '' : '<p><b>Load a model</b> with the button at the top right.</p>') + (p.group === 'everyday' ? '<div class="note">' + esc(LIMITS) + '</div>' : ''));
 }
@@ -940,10 +944,12 @@ function renderComposer() {
       b.onclick = () => { const s = new Set(c.adv.to || []); if (s.has(x.name)) s.delete(x.name); else s.add(x.name); c.adv.to = Array.from(s); save(); renderComposer(); };
       toRow.appendChild(b);
     });
-    ADV_QUICK.forEach((q) => { const b = chip(q[0]); b.onclick = () => { if (busy) return; if (q[1] === null) { insertPair('"'); return; } if (q[1] === 'recap') { send('(Out of character) Give me a short recap of the story so far and my current goal.', { to: ['DM'] }); return; } send(q[1]); }; quick.appendChild(b); });
     tools.hidden = false;
-    [4, 6, 8, 10, 12, 20].forEach((n) => { const b = chip('d' + n, 'sym'); keepFocus(b); b.onclick = () => rollInto(n); tools.appendChild(b); });
+    const mode = c.adv.mode || 'do';
+    [['do', '🗡️ Do'], ['say', '💬 Say'], ['story', '📜 Story']].forEach((md) => { const b = chip(md[1], 'mode' + (mode === md[0] ? ' on' : '')); keepFocus(b); b.onclick = () => { c.adv.mode = md[0]; save(); renderComposer(); }; tools.appendChild(b); });
+    const dice = chip('🎲', 'sym'); dice.onclick = () => openDiceSheet(c); tools.appendChild(dice);
     ['"', '*'].forEach((ch) => { const b = chip(ch === '"' ? '“ ”' : '* *', 'sym'); keepFocus(b); b.onclick = () => insertPair(ch); tools.appendChild(b); });
+    $('input').placeholder = mode === 'say' ? 'What do you say?' : mode === 'story' ? 'What happens next?' : 'What do you do?';
   } else {
     const p = personaOf(c);
     $('input').placeholder = 'Message ' + p.name;
@@ -1091,6 +1097,12 @@ function openCastEdit(c, x) {
     if (q('#ceDel')) q('#ceDel').onclick = () => { c.adv.cast = c.adv.cast.filter((y) => y.id !== x.id); c.adv.to = (c.adv.to || []).filter((n) => n !== x.name); saveNow(); renderAll(); openAdvSheet(c); };
   });
   draw();
+}
+function openDiceSheet(c) {
+  openSheet('Dice & actions', '<div class="dicegrid">' + [4, 6, 8, 10, 12, 20].map((n) => '<button data-d="' + n + '">d' + n + '</button>').join('') + '</div><p class="muted">The roll goes into your message so you can add what you do.</p><div class="sec">Quick actions</div><div class="chips" style="flex-wrap:wrap">' + ADV_QUICK.map((q, i) => '<button class="chip" data-q="' + i + '">' + q[0] + '</button>').join('') + '</div>', (b) => {
+    b.querySelectorAll('[data-d]').forEach((x) => { x.onclick = () => { closeSheet(); rollInto(parseInt(x.dataset.d, 10)); }; });
+    b.querySelectorAll('[data-q]').forEach((x) => { x.onclick = () => { const q = ADV_QUICK[parseInt(x.dataset.q, 10)]; closeSheet(); if (busy) return; if (q[1] === null) { c.adv.mode = 'say'; renderComposer(); $('input').focus(); return; } if (q[1] === 'recap') { send('(Out of character) Give me a short recap of the story so far and my current goal.', { to: ['DM'] }); return; } send(q[1]); }; });
+  });
 }
 function openChatInfo() {
   const c = activeChat(); if (!c) return;
