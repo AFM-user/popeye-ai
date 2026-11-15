@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Popeye AI</title>
+<meta name="description" content="Private AI chat with personas that runs on your device and works offline.">
+<meta name="theme-color" content="#0e141b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Popeye AI">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <button id="btnMenu" class="icon-btn" aria-label="Chats and personas">&#9776;</button>
+    <button id="btnChatInfo" class="title" aria-label="Chat settings"><span id="chatIcon">&#9875;</span><span id="chatTitle">Popeye AI</span></button>
+    <button id="btnModel" class="pill none" aria-label="AI model"><span class="dot"></span><span id="modelPill">No model</span></button>
+  </header>
+  <main id="messages" aria-live="polite"></main>
+  <footer class="composer">
+    <div id="quick" class="chips" hidden></div>
+    <div id="dice" class="chips" hidden></div>
+    <div class="inputrow">
+      <textarea id="input" rows="1" placeholder="Type a message" enterkeyhint="send" aria-label="Message"></textarea>
+      <button id="btnSend" class="send" aria-label="Send">&#10148;</button>
+    </div>
+  </footer>
+</div>
+<div id="scrim" class="scrim" hidden></div>
+<aside id="drawer" class="drawer" hidden></aside>
+<section id="sheet" class="sheet" hidden><div id="sheetBody"></div></section>
+<div id="boot" class="boot">Starting Popeye AI&hellip;</div>
+<script>
+setTimeout(function () {
+  if (!window.__popeyeReady) {
+    var b = document.getElementById('boot');
+    if (b) b.textContent = 'Still starting. If you are offline, connect to the internet once so Popeye AI can finish installing, then reopen it.';
+  }
+}, 25000);
+</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
